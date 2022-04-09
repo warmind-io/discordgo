@@ -920,7 +920,6 @@ func (s *Session) GuildMemberRoleRemove(guildID, userID, roleID string) (err err
 	return s.GuildMemberRoleRemoveWithReason(guildID, userID, roleID, "")
 }
 
-
 // GuildMemberRoleRemoveWithReason removes the specified role to a given member
 //  guildID   : The ID of a Guild.
 //  userID    : The ID of a User.
