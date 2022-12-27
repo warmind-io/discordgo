@@ -176,10 +176,6 @@ func (s *Session) Open() error {
 	if err != nil {
 		return err
 	}
-	if e.Type != `READY` && e.Type != `RESUMED` {
-		// This is not fatal, but it does not follow their API documentation.
-		s.log(LogWarning, "Expected READY/RESUMED, instead got:\n%#v\n", e)
-	}
 	s.log(LogInformational, "First Packet:\n%#v\n", e)
 
 	s.log(LogInformational, "We are now connected to Discord, emitting connect event")
@@ -573,7 +569,7 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 	// Must immediately disconnect from gateway and reconnect to new gateway.
 	if e.Operation == 7 {
 		s.log(LogInformational, "Closing and reconnecting in response to Op7")
-		s.CloseWithCode(websocket.CloseServiceRestart)
+		_ = s.CloseWithCode(websocket.CloseServiceRestart)
 		s.reconnect()
 		return e, nil
 	}
@@ -638,7 +634,8 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 		s.log(LogWarning, "unknown event: Op: %d, Seq: %d, Type: %s, Data: %s", e.Operation, e.Sequence, e.Type, string(e.RawData))
 	}
 
-	// For legacy reasons, we send the raw event also, this could be useful for handling unknown events.
+	// For legacy reasons, we send the raw event also, this could be useful for handling unknown events
+	// TK: this is useful. we need to keep this for a number of things, including datadog and sequence tracking
 	s.handleEvent(eventEventType, e)
 
 	return e, nil

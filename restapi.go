@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmind-io/warmind/util"
 	"image"
 	_ "image/jpeg" // For JPEG decoding
 	_ "image/png"  // For PNG decoding
@@ -97,8 +98,13 @@ func (s *Session) Request(method, urlStr string, data interface{}) (response []b
 	return s.RequestWithBucketID(method, urlStr, data, strings.SplitN(urlStr, "?", 2)[0])
 }
 
-// RequestWithBucketID makes a (GET/POST/...) Requests to Discord REST API with JSON data.
+// Request is the same as RequestWithBucketID without a reason.
 func (s *Session) RequestWithBucketID(method, urlStr string, data interface{}, bucketID string) (response []byte, err error) {
+	return s.RequestWithBucketIDWithReason(method, urlStr, data, bucketID, "")
+}
+
+// RequestWithBucketID makes a (GET/POST/...) Requests to Discord REST API with JSON data.
+func (s *Session) RequestWithBucketIDWithReason(method, urlStr string, data interface{}, bucketID, reason string) (response []byte, err error) {
 	var body []byte
 	if data != nil {
 		body, err = Marshal(data)
@@ -107,21 +113,24 @@ func (s *Session) RequestWithBucketID(method, urlStr string, data interface{}, b
 		}
 	}
 
-	return s.request(method, urlStr, "application/json", body, bucketID, 0)
+	return s.request(method, urlStr, "application/json", body, bucketID, 0, reason)
 }
 
 // request makes a (GET/POST/...) Requests to Discord REST API.
 // Sequence is the sequence number, if it fails with a 502 it will
 // retry with sequence+1 until it either succeeds or sequence >= session.MaxRestRetries
-func (s *Session) request(method, urlStr, contentType string, b []byte, bucketID string, sequence int) (response []byte, err error) {
+func (s *Session) request(method, urlStr, contentType string, b []byte, bucketID string, sequence int, reason string) (response []byte, err error) {
 	if bucketID == "" {
 		bucketID = strings.SplitN(urlStr, "?", 2)[0]
 	}
-	return s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucket(bucketID), sequence)
+
+	util.IncrMetric("dbot.discord.apicall", []string{"source:dgo"}, 1)
+
+	return s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucket(bucketID), sequence, reason)
 }
 
 // RequestWithLockedBucket makes a request using a bucket that's already been locked
-func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b []byte, bucket *Bucket, sequence int) (response []byte, err error) {
+func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b []byte, bucket *Bucket, sequence int, reason string) (response []byte, err error) {
 	if s.Debug {
 		log.Printf("API REQUEST %8s :: %s\n", method, urlStr)
 		log.Printf("API REQUEST  PAYLOAD :: [%s]\n", string(b))
@@ -146,8 +155,10 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 	}
 
 	// TODO: Make a configurable static variable.
-	req.Header.Set("User-Agent", s.UserAgent)
-
+	req.Header.Set("User-Agent", "DiscordBot (https://github.com/bwmarrin/discordgo, v"+VERSION+")")
+	if reason != "" {
+		req.Header.Set("X-Audit-Log-Reason", reason)
+	}
 	if s.Debug {
 		for k, v := range req.Header {
 			log.Printf("API REQUEST   HEADER :: [%s] = %+v\n", k, v)
@@ -194,7 +205,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		if sequence < s.MaxRestRetries {
 
 			s.log(LogInformational, "%s Failed (%s), Retrying...", urlStr, resp.Status)
-			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1)
+			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, reason)
 		} else {
 			err = fmt.Errorf("Exceeded Max retries HTTP %s, %s", resp.Status, response)
 		}
@@ -205,18 +216,22 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 			s.log(LogError, "rate limit unmarshal error, %s", err)
 			return
 		}
+		rl.Bucket = resp.Header.Get("X-RateLimit-Bucket")
+		if int64(rl.RetryAfter) < 200 {
+			rl.RetryAfter = 200 * time.Millisecond
+		}
 
-		if s.ShouldRetryOnRateLimit {
-			s.log(LogInformational, "Rate Limiting %s, retry in %v", urlStr, rl.RetryAfter)
-			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr})
+		s.log(LogWarning, "Rate Limiting %s, retry in %s", urlStr, rl.RetryAfter)
+		s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr})
 
+		if sequence < 5 {
 			time.Sleep(rl.RetryAfter)
 			// we can make the above smarter
 			// this method can cause longer delays than required
 
-			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence)
+			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, reason)
 		} else {
-			err = &RateLimitError{&RateLimit{TooManyRequests: &rl, URL: urlStr}}
+			s.log(LogError, "Failed rate limit retries after 5 retries: %s, %s", urlStr, rl.RetryAfter)
 		}
 	case http.StatusUnauthorized:
 		if strings.Index(s.Token, "Bot ") != 0 {
@@ -555,10 +570,10 @@ func (s *Session) GuildCreate(name string) (st *Guild, err error) {
 // g 		 : A GuildParams struct with the values Name, Region and VerificationLevel defined.
 func (s *Session) GuildEdit(guildID string, g *GuildParams) (st *Guild, err error) {
 
-	// Bounds checking for VerificationLevel, interval: [0, 4]
+	// Bounds checking for VerificationLevel, interval: [0, 3]
 	if g.VerificationLevel != nil {
 		val := *g.VerificationLevel
-		if val < 0 || val > 4 {
+		if val < 0 || val > 3 {
 			err = ErrVerificationLevelBounds
 			return
 		}
@@ -614,10 +629,11 @@ func (s *Session) GuildLeave(guildID string) (err error) {
 }
 
 // GuildBans returns an array of GuildBan structures for bans in the given guild.
-//  guildID   : The ID of a Guild
-//  limit     : Max number of bans to return (max 1000)
-//  beforeID  : If not empty all returned users will be after the given id
-//  afterID   : If not empty all returned users will be before the given id
+//
+//	guildID   : The ID of a Guild
+//	limit     : Max number of bans to return (max 1000)
+//	beforeID  : If not empty all returned users will be after the given id
+//	afterID   : If not empty all returned users will be before the given id
 func (s *Session) GuildBans(guildID string, limit int, beforeID, afterID string) (st []*GuildBan, err error) {
 	uri := EndpointGuildBans(guildID)
 
@@ -702,9 +718,10 @@ func (s *Session) GuildBanDelete(guildID, userID string) (err error) {
 }
 
 // GuildMembers returns a list of members for a guild.
-//  guildID  : The ID of a Guild.
-//  after    : The id of the member to return members after
-//  limit    : max number of members to return (max 1000)
+//
+//	guildID  : The ID of a Guild.
+//	after    : The id of the member to return members after
+//	limit    : max number of members to return (max 1000)
 func (s *Session) GuildMembers(guildID string, after string, limit int) (st []*Member, err error) {
 
 	uri := EndpointGuildMembers(guildID)
@@ -756,8 +773,9 @@ func (s *Session) GuildMembersSearch(guildID, query string, limit int) (st []*Me
 }
 
 // GuildMember returns a member of a guild.
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User
 func (s *Session) GuildMember(guildID, userID string) (st *Member, err error) {
 
 	body, err := s.RequestWithBucketID("GET", EndpointGuildMember(guildID, userID), nil, EndpointGuildMember(guildID, ""))
@@ -772,9 +790,10 @@ func (s *Session) GuildMember(guildID, userID string) (st *Member, err error) {
 }
 
 // GuildMemberAdd force joins a user to the guild.
-//  guildID       : The ID of a Guild.
-//  userID        : The ID of a User.
-//  data          : Parameters of the user to add.
+//
+//	guildID       : The ID of a Guild.
+//	userID        : The ID of a User.
+//	data          : Parameters of the user to add.
 func (s *Session) GuildMemberAdd(guildID, userID string, data *GuildMemberAddParams) (err error) {
 
 	_, err = s.RequestWithBucketID("PUT", EndpointGuildMember(guildID, userID), data, EndpointGuildMember(guildID, ""))
@@ -833,9 +852,11 @@ func (s *Session) GuildMemberEditComplex(guildID, userID string, data *GuildMemb
 }
 
 // GuildMemberMove moves a guild member from one voice channel to another/none
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  channelID : The ID of a channel to move user to or nil to remove from voice channel
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	channelID : The ID of a channel to move user to or nil to remove from voice channel
+//
 // NOTE : I am not entirely set on the name of this function and it may change
 // prior to the final 1.0.0 release of Discordgo
 func (s *Session) GuildMemberMove(guildID string, userID string, channelID *string) (err error) {
@@ -867,9 +888,10 @@ func (s *Session) GuildMemberNickname(guildID, userID, nickname string) (err err
 }
 
 // GuildMemberMute server mutes a guild member
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  mute    : boolean value for if the user should be muted
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	mute    : boolean value for if the user should be muted
 func (s *Session) GuildMemberMute(guildID string, userID string, mute bool) (err error) {
 	data := struct {
 		Mute bool `json:"mute"`
@@ -880,10 +902,11 @@ func (s *Session) GuildMemberMute(guildID string, userID string, mute bool) (err
 }
 
 // GuildMemberTimeout times out a guild member
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  until     : The timestamp for how long a member should be timed out.
-//              Set to nil to remove timeout.
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	until     : The timestamp for how long a member should be timed out.
+//	            Set to nil to remove timeout.
 func (s *Session) GuildMemberTimeout(guildID string, userID string, until *time.Time) (err error) {
 	data := struct {
 		CommunicationDisabledUntil *time.Time `json:"communication_disabled_until"`
@@ -894,9 +917,10 @@ func (s *Session) GuildMemberTimeout(guildID string, userID string, until *time.
 }
 
 // GuildMemberDeafen server deafens a guild member
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  deaf    : boolean value for if the user should be deafened
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	deaf    : boolean value for if the user should be deafened
 func (s *Session) GuildMemberDeafen(guildID string, userID string, deaf bool) (err error) {
 	data := struct {
 		Deaf bool `json:"deaf"`
@@ -907,24 +931,42 @@ func (s *Session) GuildMemberDeafen(guildID string, userID string, deaf bool) (e
 }
 
 // GuildMemberRoleAdd adds the specified role to a given member
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  roleID 	  : The ID of a Role to be assigned to the user.
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be assigned to the user.
 func (s *Session) GuildMemberRoleAdd(guildID, userID, roleID string) (err error) {
+	return s.GuildMemberRoleAddWithReason(guildID, userID, roleID, "")
+}
 
-	_, err = s.RequestWithBucketID("PUT", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""))
-
+// GuildMemberRoleAddWithReason adds the specified role to a given member
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be assigned to the user.
+//	reason    : The reason for Role to be assigned. (Appears in Audit Log).
+func (s *Session) GuildMemberRoleAddWithReason(guildID, userID, roleID, reason string) (err error) {
+	_, err = s.RequestWithBucketIDWithReason("PUT", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), reason)
 	return
 }
 
 // GuildMemberRoleRemove removes the specified role to a given member
-//  guildID   : The ID of a Guild.
-//  userID    : The ID of a User.
-//  roleID 	  : The ID of a Role to be removed from the user.
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be removed from the user.
 func (s *Session) GuildMemberRoleRemove(guildID, userID, roleID string) (err error) {
+	return s.GuildMemberRoleRemoveWithReason(guildID, userID, roleID, "")
+}
 
-	_, err = s.RequestWithBucketID("DELETE", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""))
-
+// GuildMemberRoleRemoveWithReason removes the specified role to a given member
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be removed from the user.
+//	reason    : The reason for Role to be removed. (Appears in Audit Log).
+func (s *Session) GuildMemberRoleRemoveWithReason(guildID, userID, roleID, reason string) (err error) {
+	_, err = s.RequestWithBucketIDWithReason("DELETE", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), reason)
 	return
 }
 
@@ -933,7 +975,7 @@ func (s *Session) GuildMemberRoleRemove(guildID, userID, roleID string) (err err
 // guildID   : The ID of a Guild.
 func (s *Session) GuildChannels(guildID string) (st []*Channel, err error) {
 
-	body, err := s.request("GET", EndpointGuildChannels(guildID), "", nil, EndpointGuildChannels(guildID), 0)
+	body, err := s.request("GET", EndpointGuildChannels(guildID), "", nil, EndpointGuildChannels(guildID), 0, "")
 	if err != nil {
 		return
 	}
@@ -1628,7 +1670,7 @@ func (s *Session) ChannelMessageSendComplex(channelID string, data *MessageSend)
 			return st, encodeErr
 		}
 
-		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0)
+		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0, "")
 	} else {
 		response, err = s.RequestWithBucketID("POST", endpoint, data, endpoint)
 	}
@@ -1738,7 +1780,7 @@ func (s *Session) ChannelMessageEditComplex(m *MessageEdit) (st *Message, err er
 		if encodeErr != nil {
 			return st, encodeErr
 		}
-		response, err = s.request("PATCH", endpoint, contentType, body, EndpointChannelMessage(m.Channel, ""), 0)
+		response, err = s.request("PATCH", endpoint, contentType, body, EndpointChannelMessage(m.Channel, ""), 0, "")
 	} else {
 		response, err = s.RequestWithBucketID("PATCH", endpoint, m, EndpointChannelMessage(m.Channel, ""))
 	}
@@ -1978,10 +2020,11 @@ func (s *Session) InviteWithCounts(inviteID string) (st *Invite, err error) {
 }
 
 // InviteComplex returns an Invite structure of the given invite including specified fields.
-//  inviteID                  : The invite code
-//  guildScheduledEventID     : If specified, includes specified guild scheduled event.
-//  withCounts                : Whether to include approximate member counts or not
-//  withExpiration            : Whether to include expiration time or not
+//
+//	inviteID                  : The invite code
+//	guildScheduledEventID     : If specified, includes specified guild scheduled event.
+//	withCounts                : Whether to include approximate member counts or not
+//	withExpiration            : Whether to include expiration time or not
 func (s *Session) InviteComplex(inviteID, guildScheduledEventID string, withCounts, withExpiration bool) (st *Invite, err error) {
 	endpoint := EndpointInvite(inviteID)
 	v := url.Values{}
@@ -2274,7 +2317,7 @@ func (s *Session) webhookExecute(webhookID, token string, wait bool, threadID st
 			return st, encodeErr
 		}
 
-		response, err = s.request("POST", uri, contentType, body, uri, 0)
+		response, err = s.request("POST", uri, contentType, body, uri, 0, "")
 	} else {
 		response, err = s.RequestWithBucketID("POST", uri, data, uri)
 	}
@@ -2334,7 +2377,7 @@ func (s *Session) WebhookMessageEdit(webhookID, token, messageID string, data *W
 			return nil, err
 		}
 
-		response, err = s.request("PATCH", uri, contentType, body, uri, 0)
+		response, err = s.request("PATCH", uri, contentType, body, uri, 0, "")
 		if err != nil {
 			return nil, err
 		}
@@ -2554,7 +2597,7 @@ func (s *Session) ForumThreadStartComplex(channelID string, threadData *ThreadSt
 			return th, encodeErr
 		}
 
-		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0)
+		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0, "")
 	} else {
 		response, err = s.RequestWithBucketID("POST", endpoint, data, endpoint)
 	}
@@ -2944,7 +2987,7 @@ func (s *Session) ApplicationCommandPermissionsBatchEdit(appID, guildID string, 
 // InteractionRespond creates the response to an interaction.
 // interaction : Interaction instance.
 // resp        : Response message data.
-func (s *Session) InteractionRespond(interaction *Interaction, resp *InteractionResponse) error {
+func (s *Session) InteractionRespond(interaction *Interaction, resp *InteractionResponse) (err error) {
 	endpoint := EndpointInteractionResponse(interaction.ID, interaction.Token)
 
 	if resp.Data != nil && len(resp.Data.Files) > 0 {
@@ -2953,12 +2996,12 @@ func (s *Session) InteractionRespond(interaction *Interaction, resp *Interaction
 			return err
 		}
 
-		_, err = s.request("POST", endpoint, contentType, body, endpoint, 0)
-		return err
+		_, err = s.request("POST", endpoint, contentType, body, endpoint, 0, "")
+	} else {
+		_, err = s.RequestWithBucketID("POST", endpoint, *resp, endpoint)
 	}
 
-	_, err := s.RequestWithBucketID("POST", endpoint, *resp, endpoint)
-	return err
+	return
 }
 
 // InteractionResponse gets the response to an interaction.

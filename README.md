@@ -42,7 +42,7 @@ go get github.com/bwmarrin/discordgo
 Import the package into your project.
 
 ```go
-import "github.com/bwmarrin/discordgo"
+import "github.com/warmind-io/discordgo"
 ```
 
 Construct a new Discord client which can be used to access the variety of 
