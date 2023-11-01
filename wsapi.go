@@ -48,7 +48,7 @@ type resumePacket struct {
 // Open creates a websocket connection to Discord.
 // See: https://discord.com/developers/docs/topics/gateway#connecting
 func (s *Session) Open() error {
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	var err error
 
@@ -176,11 +176,7 @@ func (s *Session) Open() error {
 	if err != nil {
 		return err
 	}
-	if e.Type != `READY` && e.Type != `RESUMED` {
-		// This is not fatal, but it does not follow their API documentation.
-		s.log(LogWarning, "Expected READY/RESUMED, instead got:\n%#v\n", e)
-	}
-	s.log(LogInformational, "First Packet:\n%#v\n", e)
+	s.log(LogInformational, "First Packet: Op: %d Seq: %d Type: %s Timestamp: %s", e.Operation, e.Sequence, e.Type, time.Now().UTC())
 
 	s.log(LogInformational, "We are now connected to Discord, emitting connect event")
 	s.handleEvent(connectEventType, &Connect{})
@@ -188,7 +184,7 @@ func (s *Session) Open() error {
 	// A VoiceConnections map is a hard requirement for Voice.
 	// XXX: can this be moved to when opening a voice connection?
 	if s.VoiceConnections == nil {
-		s.log(LogInformational, "creating new VoiceConnections map")
+		s.log(LogDebug, "creating new VoiceConnections map")
 		s.VoiceConnections = make(map[string]*VoiceConnection)
 	}
 
@@ -201,7 +197,7 @@ func (s *Session) Open() error {
 	go s.heartbeat(s.wsConn, s.listening, h.HeartbeatInterval)
 	go s.listen(s.wsConn, s.listening)
 
-	s.log(LogInformational, "exiting")
+	s.log(LogDebug, "exiting")
 	return nil
 }
 
@@ -209,7 +205,7 @@ func (s *Session) Open() error {
 // listening channel is closed, or an error occurs.
 func (s *Session) listen(wsConn *websocket.Conn, listening <-chan interface{}) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	for {
 
@@ -277,7 +273,7 @@ func (s *Session) HeartbeatLatency() time.Duration {
 // disconnect the websocket connection after a few seconds.
 func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}, heartbeatIntervalMsec time.Duration) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	if listening == nil || wsConn == nil {
 		return
@@ -516,7 +512,7 @@ func (s *Session) RequestGuildMembersBatchList(guildIDs []string, userIDs []stri
 }
 
 func (s *Session) requestGuildMembers(data requestGuildMembersData) (err error) {
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	s.RLock()
 	defer s.RUnlock()
@@ -593,7 +589,7 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 	// Must immediately disconnect from gateway and reconnect to new gateway.
 	if e.Operation == 7 {
 		s.log(LogInformational, "Closing and reconnecting in response to Op7")
-		s.CloseWithCode(websocket.CloseServiceRestart)
+		_ = s.CloseWithCode(websocket.CloseServiceRestart)
 		s.reconnect()
 		return e, nil
 	}
@@ -658,7 +654,8 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 		s.log(LogWarning, "unknown event: Op: %d, Seq: %d, Type: %s, Data: %s", e.Operation, e.Sequence, e.Type, string(e.RawData))
 	}
 
-	// For legacy reasons, we send the raw event also, this could be useful for handling unknown events.
+	// For legacy reasons, we send the raw event also, this could be useful for handling unknown events
+	// TK: this is useful. we need to keep this for a number of things, including datadog and sequence tracking
 	s.handleEvent(eventEventType, e)
 
 	return e, nil
@@ -682,13 +679,13 @@ type voiceChannelJoinOp struct {
 
 // ChannelVoiceJoin joins the session user to a voice channel.
 //
-//    gID     : Guild ID of the channel to join.
-//    cID     : Channel ID of the channel to join.
-//    mute    : If true, you will be set to muted upon joining.
-//    deaf    : If true, you will be set to deafened upon joining.
+//	gID     : Guild ID of the channel to join.
+//	cID     : Channel ID of the channel to join.
+//	mute    : If true, you will be set to muted upon joining.
+//	deaf    : If true, you will be set to deafened upon joining.
 func (s *Session) ChannelVoiceJoin(gID, cID string, mute, deaf bool) (voice *VoiceConnection, err error) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	s.RLock()
 	voice, _ = s.VoiceConnections[gID]
@@ -729,13 +726,13 @@ func (s *Session) ChannelVoiceJoin(gID, cID string, mute, deaf bool) (voice *Voi
 //
 // This should only be used when the VoiceServerUpdate will be intercepted and used elsewhere.
 //
-//    gID     : Guild ID of the channel to join.
-//    cID     : Channel ID of the channel to join, leave empty to disconnect.
-//    mute    : If true, you will be set to muted upon joining.
-//    deaf    : If true, you will be set to deafened upon joining.
+//	gID     : Guild ID of the channel to join.
+//	cID     : Channel ID of the channel to join, leave empty to disconnect.
+//	mute    : If true, you will be set to muted upon joining.
+//	deaf    : If true, you will be set to deafened upon joining.
 func (s *Session) ChannelVoiceJoinManual(gID, cID string, mute, deaf bool) (err error) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	var channelID *string
 	if cID == "" {
@@ -788,7 +785,7 @@ func (s *Session) onVoiceStateUpdate(st *VoiceStateUpdate) {
 // the new region endpoint.
 func (s *Session) onVoiceServerUpdate(st *VoiceServerUpdate) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	s.RLock()
 	voice, exists := s.VoiceConnections[st.GuildID]
@@ -862,7 +859,7 @@ func (s *Session) identify() error {
 
 func (s *Session) reconnect() {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 
 	var err error
 
@@ -927,7 +924,7 @@ func (s *Session) Close() error {
 // TODO: Add support for Voice WS/UDP connections
 func (s *Session) CloseWithCode(closeCode int) (err error) {
 
-	s.log(LogInformational, "called")
+	s.log(LogDebug, "called")
 	s.Lock()
 
 	s.DataReady = false

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmind-io/warmind/util"
 	"image"
 	_ "image/jpeg" // For JPEG decoding
 	_ "image/png"  // For PNG decoding
@@ -168,8 +169,13 @@ func (s *Session) Request(method, urlStr string, data interface{}, options ...Re
 	return s.RequestWithBucketID(method, urlStr, data, strings.SplitN(urlStr, "?", 2)[0], options...)
 }
 
-// RequestWithBucketID makes a (GET/POST/...) Requests to Discord REST API with JSON data.
+// // Request is the same as RequestWithBucketID without a reason.
 func (s *Session) RequestWithBucketID(method, urlStr string, data interface{}, bucketID string, options ...RequestOption) (response []byte, err error) {
+	return s.RequestWithBucketIDWithReason(method, urlStr, data, bucketID, "", options...)
+}
+
+// RequestWithBucketID makes a (GET/POST/...) Requests to Discord REST API with JSON data with reason.
+func (s *Session) RequestWithBucketIDWithReason(method, urlStr string, data interface{}, bucketID, reason string, options ...RequestOption) (response []byte, err error) {
 	var body []byte
 	if data != nil {
 		body, err = Marshal(data)
@@ -178,21 +184,24 @@ func (s *Session) RequestWithBucketID(method, urlStr string, data interface{}, b
 		}
 	}
 
-	return s.request(method, urlStr, "application/json", body, bucketID, 0, options...)
+	return s.request(method, urlStr, "application/json", reason, body, bucketID, 0, options...)
 }
 
 // request makes a (GET/POST/...) Requests to Discord REST API.
 // Sequence is the sequence number, if it fails with a 502 it will
 // retry with sequence+1 until it either succeeds or sequence >= session.MaxRestRetries
-func (s *Session) request(method, urlStr, contentType string, b []byte, bucketID string, sequence int, options ...RequestOption) (response []byte, err error) {
+func (s *Session) request(method, urlStr, contentType, reason string, b []byte, bucketID string, sequence int, options ...RequestOption) (response []byte, err error) {
 	if bucketID == "" {
 		bucketID = strings.SplitN(urlStr, "?", 2)[0]
 	}
-	return s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucket(bucketID), sequence, options...)
+
+	util.IncrMetric("dbot.discord.apicall", []string{"source:dgo"}, 1)
+
+	return s.RequestWithLockedBucket(method, urlStr, contentType, reason, b, s.Ratelimiter.LockBucket(bucketID), sequence, options...)
 }
 
 // RequestWithLockedBucket makes a request using a bucket that's already been locked
-func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b []byte, bucket *Bucket, sequence int, options ...RequestOption) (response []byte, err error) {
+func (s *Session) RequestWithLockedBucket(method, urlStr, contentType, reason string, b []byte, bucket *Bucket, sequence int, options ...RequestOption) (response []byte, err error) {
 	if s.Debug {
 		log.Printf("API REQUEST %8s :: %s\n", method, urlStr)
 		log.Printf("API REQUEST  PAYLOAD :: [%s]\n", string(b))
@@ -217,7 +226,10 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 	}
 
 	// TODO: Make a configurable static variable.
-	req.Header.Set("User-Agent", s.UserAgent)
+	req.Header.Set("User-Agent", "DiscordBot (https://github.com/bwmarrin/discordgo, v"+VERSION+")")
+	if reason != "" {
+		req.Header.Set("X-Audit-Log-Reason", reason)
+	}
 
 	cfg := newRequestConfig(s, req)
 	for _, opt := range options {
@@ -271,7 +283,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		if sequence < cfg.MaxRestRetries {
 
 			s.log(LogInformational, "%s Failed (%s), Retrying...", urlStr, resp.Status)
-			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, options...)
+			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, reason, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, options...)
 		} else {
 			err = fmt.Errorf("Exceeded Max retries HTTP %s, %s", resp.Status, response)
 		}
@@ -282,18 +294,22 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 			s.log(LogError, "rate limit unmarshal error, %s", err)
 			return
 		}
+		rl.Bucket = resp.Header.Get("X-RateLimit-Bucket")
+		if int64(rl.RetryAfter) < 200 {
+			rl.RetryAfter = 200 * time.Millisecond
+		}
 
-		if cfg.ShouldRetryOnRateLimit {
-			s.log(LogInformational, "Rate Limiting %s, retry in %v", urlStr, rl.RetryAfter)
-			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr})
+		s.log(LogWarning, "Rate Limiting %s, retry in %s", urlStr, rl.RetryAfter)
+		s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr})
 
+		if sequence < 5 {
 			time.Sleep(rl.RetryAfter)
 			// we can make the above smarter
 			// this method can cause longer delays than required
 
-			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence, options...)
+			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, reason, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, options...)
 		} else {
-			err = &RateLimitError{&RateLimit{TooManyRequests: &rl, URL: urlStr}}
+			s.log(LogError, "Failed rate limit retries after 5 retries: %s, %s", urlStr, rl.RetryAfter)
 		}
 	case http.StatusUnauthorized:
 		if strings.Index(s.Token, "Bot ") != 0 {
@@ -985,8 +1001,17 @@ func (s *Session) GuildMemberDeafen(guildID string, userID string, deaf bool, op
 // userID    : The ID of a User.
 // roleID    : The ID of a Role to be assigned to the user.
 func (s *Session) GuildMemberRoleAdd(guildID, userID, roleID string, options ...RequestOption) (err error) {
+	return s.GuildMemberRoleAddWithReason(guildID, userID, roleID, "", options...)
+}
 
-	_, err = s.RequestWithBucketID("PUT", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), options...)
+// GuildMemberRoleAddWithReason adds the specified role to a given member
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be assigned to the user.
+//	reason    : The reason for Role to be assigned. (Appears in Audit Log).
+func (s *Session) GuildMemberRoleAddWithReason(guildID, userID, roleID, reason string, options ...RequestOption) (err error) {
+	_, err = s.RequestWithBucketIDWithReason("PUT", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), reason, options...)
 
 	return
 }
@@ -996,8 +1021,17 @@ func (s *Session) GuildMemberRoleAdd(guildID, userID, roleID string, options ...
 // userID    : The ID of a User.
 // roleID    : The ID of a Role to be removed from the user.
 func (s *Session) GuildMemberRoleRemove(guildID, userID, roleID string, options ...RequestOption) (err error) {
+	return s.GuildMemberRoleRemoveWithReason(guildID, userID, roleID, "", options...)
+}
 
-	_, err = s.RequestWithBucketID("DELETE", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), options...)
+// GuildMemberRoleRemoveWithReason removes the specified role to a given member
+//
+//	guildID   : The ID of a Guild.
+//	userID    : The ID of a User.
+//	roleID 	  : The ID of a Role to be removed from the user.
+//	reason    : The reason for Role to be removed. (Appears in Audit Log).
+func (s *Session) GuildMemberRoleRemoveWithReason(guildID, userID, roleID, reason string, options ...RequestOption) (err error) {
+	_, err = s.RequestWithBucketIDWithReason("DELETE", EndpointGuildMemberRole(guildID, userID, roleID), nil, EndpointGuildMemberRole(guildID, "", ""), reason, options...)
 
 	return
 }
@@ -1007,7 +1041,7 @@ func (s *Session) GuildMemberRoleRemove(guildID, userID, roleID string, options 
 // guildID   : The ID of a Guild.
 func (s *Session) GuildChannels(guildID string, options ...RequestOption) (st []*Channel, err error) {
 
-	body, err := s.request("GET", EndpointGuildChannels(guildID), "", nil, EndpointGuildChannels(guildID), 0, options...)
+	body, err := s.request("GET", EndpointGuildChannels(guildID), "", "", nil, EndpointGuildChannels(guildID), 0, options...)
 	if err != nil {
 		return
 	}
@@ -1708,7 +1742,7 @@ func (s *Session) ChannelMessageSendComplex(channelID string, data *MessageSend,
 		if encodeErr != nil {
 			return st, encodeErr
 		}
-		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0, options...)
+		response, err = s.request("POST", endpoint, contentType, "", body, endpoint, 0, options...)
 	} else {
 		response, err = s.RequestWithBucketID("POST", endpoint, data, endpoint, options...)
 	}
@@ -1818,7 +1852,7 @@ func (s *Session) ChannelMessageEditComplex(m *MessageEdit, options ...RequestOp
 		if encodeErr != nil {
 			return st, encodeErr
 		}
-		response, err = s.request("PATCH", endpoint, contentType, body, EndpointChannelMessage(m.Channel, ""), 0, options...)
+		response, err = s.request("PATCH", endpoint, contentType, "", body, EndpointChannelMessage(m.Channel, ""), 0, options...)
 	} else {
 		response, err = s.RequestWithBucketID("PATCH", endpoint, m, EndpointChannelMessage(m.Channel, ""), options...)
 	}
@@ -2355,7 +2389,7 @@ func (s *Session) webhookExecute(webhookID, token string, wait bool, threadID st
 			return st, encodeErr
 		}
 
-		response, err = s.request("POST", uri, contentType, body, uri, 0, options...)
+		response, err = s.request("POST", uri, contentType, "", body, uri, 0, options...)
 	} else {
 		response, err = s.RequestWithBucketID("POST", uri, data, uri, options...)
 	}
@@ -2415,7 +2449,7 @@ func (s *Session) WebhookMessageEdit(webhookID, token, messageID string, data *W
 			return nil, err
 		}
 
-		response, err = s.request("PATCH", uri, contentType, body, uri, 0, options...)
+		response, err = s.request("PATCH", uri, contentType, "", body, uri, 0, options...)
 		if err != nil {
 			return nil, err
 		}
@@ -2635,7 +2669,7 @@ func (s *Session) ForumThreadStartComplex(channelID string, threadData *ThreadSt
 			return th, encodeErr
 		}
 
-		response, err = s.request("POST", endpoint, contentType, body, endpoint, 0, options...)
+		response, err = s.request("POST", endpoint, contentType, "", body, endpoint, 0, options...)
 	} else {
 		response, err = s.RequestWithBucketID("POST", endpoint, data, endpoint, options...)
 	}
@@ -3065,7 +3099,7 @@ func (s *Session) InteractionRespond(interaction *Interaction, resp *Interaction
 			return err
 		}
 
-		_, err = s.request("POST", endpoint, contentType, body, endpoint, 0, options...)
+		_, err = s.request("POST", endpoint, contentType, "", body, endpoint, 0, options...)
 		return err
 	}
 
