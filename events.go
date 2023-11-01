@@ -323,6 +323,21 @@ type UserUpdate struct {
 	*User
 }
 
+// EntitlementCreate is the data for a EntitlementCreate event.
+type EntitlementCreate struct {
+	*Entitlement
+}
+
+// EntitlementUpdate is the data for a EntitlementUpdate event.
+type EntitlementUpdate struct {
+	*Entitlement
+}
+
+// EntitlementDelete is the data for a EntitlementDelete event.
+type EntitlementDelete struct {
+	*Entitlement
+}
+
 // VoiceServerUpdate is the data for a VoiceServerUpdate event.
 type VoiceServerUpdate struct {
 	Token    string `json:"token"`

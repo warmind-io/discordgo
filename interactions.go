@@ -233,6 +233,11 @@ type Interaction struct {
 	// NOTE: this field is only filled when the interaction was invoked in a guild.
 	GuildLocale *Locale `json:"guild_locale"`
 
+	// For monetized apps, any entitlements for the invoking user or guild, representing access to premium SKUs
+	Entitlements []Entitlement `json:"entitlements,omitempty"`
+	// For monetized apps, skuIds for entitlements for the invoking user or guild
+	EntitlementSkuIDs []string `json:"entitlement_sku_ids,omitempty"`
+
 	Token   string `json:"token"`
 	Version int    `json:"version"`
 }

@@ -3481,3 +3481,90 @@ func (s *Session) UserApplicationRoleConnectionUpdate(appID string, rconn *Appli
 	err = unmarshal(body, &st)
 	return
 }
+
+// ----------------------------------------------------------------------
+// Functions specific to entitlements
+// ----------------------------------------------------------------------
+
+// Entitlements Returns all entitlements for a given app, active and expired.
+// appID   	    : ID of the application
+// userID       : User ID to look up entitlements for
+// guildID      : Guild ID to look up entitlements for
+// skuIDs	    : Optional list of SKU IDs to check entitlements for
+// limit        : Number of entitlements to return, 1-100, default 100
+// beforeID     : Retrieve entitlements before this entitlement ID
+// afterID      : Retrieve entitlements after this entitlement ID
+// excludeEnded : Whether ended entitlements should be omitted
+func (s *Session) Entitlements(appID, userID, guildID string, skuIDs []string, limit int, beforeID, afterID string, excludeEnded bool, options ...RequestOption) (st []*Entitlement, err error) {
+	uri := EndpointApplicationEntitlements(appID)
+
+	queryParams := url.Values{}
+	if userID != "" {
+		queryParams.Set("user_id", userID)
+	}
+	if guildID != "" {
+		queryParams.Set("guild_id", guildID)
+	}
+	if len(skuIDs) > 0 {
+		queryParams.Set("sku_ids", strings.Join(skuIDs, ","))
+	}
+	if excludeEnded {
+		queryParams.Set("exclude_ended", "true")
+	}
+	if limit > 0 {
+		queryParams.Set("limit", strconv.Itoa(limit))
+	}
+	if beforeID != "" {
+		queryParams.Set("before", beforeID)
+	}
+	if afterID != "" {
+		queryParams.Set("after", afterID)
+	}
+
+	if len(queryParams) > 0 {
+		uri += "?" + queryParams.Encode()
+	}
+	var body []byte
+	body, err = s.RequestWithBucketID("GET", uri, nil, EndpointApplicationEntitlements(appID), options...)
+	if err != nil {
+		return
+	}
+
+	err = unmarshal(body, &st)
+	return
+}
+
+// TestEntitlementCreate Creates a test entitlement to a given SKU for a given guild or user.
+// Discord will act as though that user or guild has entitlement to your premium offering.
+// appID 	  : ID of the application
+// skuID      : ID of the SKU to grant the entitlement to
+// ownerID    : ID of the guild or user to grant the entitlement to
+// ownerType  : 1 for a guild subscription, 2 for a user subscription
+func (s *Session) TestEntitlementCreate(appID, skuID, ownerID string, ownerType EntitlementOwnerType, options ...RequestOption) (st *Entitlement, err error) {
+	endpoint := EndpointApplicationEntitlements(appID)
+
+	data := struct {
+		SkuID     string               `json:"sku_id"`
+		OwnerID   string               `json:"owner_id"`
+		OwnerType EntitlementOwnerType `json:"owner_type"`
+	}{SkuID: skuID, OwnerID: ownerID, OwnerType: ownerType}
+
+	var body []byte
+	body, err = s.RequestWithBucketID("POST", endpoint, data, endpoint, options...)
+	if err != nil {
+		return
+	}
+
+	err = unmarshal(body, &st)
+	return
+}
+
+// TestEntitlementDelete Deletes a currently-active test entitlement.
+// Discord will act as though that user or guild no longer has entitlement to your premium offering.
+// appID 	  		: ID of the application
+// entitlementID    : ID of the entitlement to delete
+func (s *Session) TestEntitlementDelete(appID, entitlementID string, options ...RequestOption) (err error) {
+	endpoint := EndpointApplicationEntitlement(appID, entitlementID)
+	_, err = s.RequestWithBucketID("DELETE", endpoint, nil, endpoint, options...)
+	return
+}

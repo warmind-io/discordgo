@@ -1414,6 +1414,54 @@ func (r Roles) Swap(i, j int) {
 	r[i], r[j] = r[j], r[i]
 }
 
+// EntitlementOwnerType represents the type of entitlement on which an entitlement is granted.
+type EntitlementOwnerType int
+
+// The possible permission overwrite types.
+const (
+	EntitlementOwnerTypeGuild EntitlementOwnerType = 1
+	EntitlementOwnerTypeUser  EntitlementOwnerType = 2
+)
+
+// EntitlementType indicates the presence of a feature in a guild
+type EntitlementType int
+
+// Constants for EntitlementType
+const (
+	EntitlementTypeApplicationSubscription EntitlementType = 8
+)
+
+// Entitlement
+type Entitlement struct {
+	// ID of the entitlement
+	ID string `json:"id"`
+	// ID of the SKU
+	SkuID string `json:"sku_id"`
+	// ID of the parent application
+	ApplicationID string `json:"application_id"`
+	// ID of the user that is granted access to the entitlement's sku
+	UserID string `json:"user_id"`
+	// ID of the guild that is granted access to the entitlement's sku
+	GuildID string `json:"guild_id"`
+	// Type of entitlement
+	Type EntitlementType `json:"type"`
+	// Entitlement was deleted
+	Deleted bool `json:"deleted"`
+	// Start date at which the entitlement is valid. Not present when using test entitlements.
+	StartsAt time.Time `json:"starts_at"`
+	// Date at which the entitlement is no longer valid. Not present when using test entitlements.
+	EndsAt time.Time `json:"ends_at"`
+	// ID of the subscription
+	SubscriptionID string `json:"subscription_id"`
+
+	// Not documented
+	GiftCodeFlags int `json:"gift_code_flags"`
+	// Not documented
+	Consumed bool `json:"consumed"`
+	// Not documented
+	PromotionID interface{} `json:"promotion_id"`
+}
+
 // A VoiceState stores the voice states of Guilds
 type VoiceState struct {
 	GuildID                 string     `json:"guild_id"`
@@ -2435,6 +2483,7 @@ const (
 	ErrCodeAnApplicationWithThatNameAlreadyExists = 40041
 	ErrCodeInteractionHasAlreadyBeenAcknowledged  = 40060
 	ErrCodeTagNamesMustBeUnique                   = 40061
+	ErrCodeEntitlementAlreadyGrantedForResource   = 40074
 
 	ErrCodeMissingAccess                                                = 50001
 	ErrCodeInvalidAccountType                                           = 50002
@@ -2468,6 +2517,7 @@ const (
 	ErrCodeFileUploadedExceedsTheMaximumSize                            = 50045
 	ErrCodeInvalidFileUploaded                                          = 50046
 	ErrCodeInvalidGuild                                                 = 50055
+	ErrCodeInvalidSku                                                   = 50057
 	ErrCodeInvalidMessageType                                           = 50068
 	ErrCodeCannotDeleteAChannelRequiredForCommunityGuilds               = 50074
 	ErrCodeInvalidStickerSent                                           = 50081
