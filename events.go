@@ -69,6 +69,24 @@ type ChannelPinsUpdate struct {
 	GuildID          string `json:"guild_id,omitempty"`
 }
 
+// ChannelTopicUpdate is the data for a ChannelTopicUpdate event.
+type ChannelTopicUpdate struct {
+	// ID of the voice channel
+	ID string `json:"id"`
+	// ID of the guild
+	GuildID string `json:"guild_id"`
+	// Channel topic (0-500 characters)
+	Topic *string `json:"topic"`
+}
+
+// ChannelTopicDelete is the data for a ChannelTopicDelete event.
+type ChannelTopicDelete struct {
+	// ID of the voice channel
+	ID string `json:"id"`
+	// ID of the guild
+	GuildID string `json:"guild_id"`
+}
+
 // ThreadCreate is the data for a ThreadCreate event.
 type ThreadCreate struct {
 	*Channel

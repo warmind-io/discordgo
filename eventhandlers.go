@@ -16,6 +16,8 @@ const (
 	channelDeleteEventType                       = "CHANNEL_DELETE"
 	channelPinsUpdateEventType                   = "CHANNEL_PINS_UPDATE"
 	channelUpdateEventType                       = "CHANNEL_UPDATE"
+	channelTopicUpdateEventType                  = "CHANNEL_TOPIC_UPDATE"
+	channelTopicDeleteEventType                  = "CHANNEL_TOPIC_DELETE"
 	connectEventType                             = "__CONNECT__"
 	disconnectEventType                          = "__DISCONNECT__"
 	entitlementCreateEventType                   = "ENTITLEMENT_CREATE"
@@ -251,6 +253,46 @@ func (eh channelUpdateEventHandler) New() interface{} {
 // Handle is the handler for ChannelUpdate events.
 func (eh channelUpdateEventHandler) Handle(s *Session, i interface{}) {
 	if t, ok := i.(*ChannelUpdate); ok {
+		eh(s, t)
+	}
+}
+
+// channelTopicUpdateEventHandler is an event handler for ChannelTopicUpdate events.
+type channelTopicUpdateEventHandler func(*Session, *ChannelTopicUpdate)
+
+// Type returns the event type for ChannelTopicUpdate events.
+func (eh channelTopicUpdateEventHandler) Type() string {
+	return channelTopicUpdateEventType
+}
+
+// New returns a new instance of ChannelTopicUpdate.
+func (eh channelTopicUpdateEventHandler) New() interface{} {
+	return &ChannelTopicUpdate{}
+}
+
+// Handle is the handler for ChannelTopicUpdate events.
+func (eh channelTopicUpdateEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*ChannelTopicUpdate); ok {
+		eh(s, t)
+	}
+}
+
+// channelTopicDeleteEventHandler is an event handler for ChannelTopicDelete events.
+type channelTopicDeleteEventHandler func(*Session, *ChannelTopicDelete)
+
+// Type returns the event type for VoiceChannelStatusDelete events.
+func (eh channelTopicDeleteEventHandler) Type() string {
+	return channelTopicDeleteEventType
+}
+
+// New returns a new instance of ChannelTopicDelete.
+func (eh channelTopicDeleteEventHandler) New() interface{} {
+	return &ChannelTopicDelete{}
+}
+
+// Handle is the handler for ChannelTopicDelete events.
+func (eh channelTopicDeleteEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*ChannelTopicDelete); ok {
 		eh(s, t)
 	}
 }
@@ -1397,6 +1439,10 @@ func handlerForInterface(handler interface{}) EventHandler {
 		return channelPinsUpdateEventHandler(v)
 	case func(*Session, *ChannelUpdate):
 		return channelUpdateEventHandler(v)
+	case func(*Session, *ChannelTopicUpdate):
+		return channelTopicUpdateEventHandler(v)
+	case func(*Session, *ChannelTopicDelete):
+		return channelTopicDeleteEventHandler(v)
 	case func(*Session, *Connect):
 		return connectEventHandler(v)
 	case func(*Session, *Disconnect):
@@ -1526,6 +1572,8 @@ func init() {
 	registerInterfaceProvider(channelDeleteEventHandler(nil))
 	registerInterfaceProvider(channelPinsUpdateEventHandler(nil))
 	registerInterfaceProvider(channelUpdateEventHandler(nil))
+	registerInterfaceProvider(channelTopicUpdateEventHandler(nil))
+	registerInterfaceProvider(channelTopicDeleteEventHandler(nil))
 	registerInterfaceProvider(entitlementCreateEventHandler(nil))
 	registerInterfaceProvider(entitlementUpdateEventHandler(nil))
 	registerInterfaceProvider(entitlementDeleteEventHandler(nil))
