@@ -43,6 +43,9 @@ const (
 	guildScheduledEventUpdateEventType           = "GUILD_SCHEDULED_EVENT_UPDATE"
 	guildScheduledEventUserAddEventType          = "GUILD_SCHEDULED_EVENT_USER_ADD"
 	guildScheduledEventUserRemoveEventType       = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+	guildSoundboardSoundCreateEventType          = "GUILD_SOUNDBOARD_SOUND_CREATE"
+	guildSoundboardSoundDeleteEventType          = "GUILD_SOUNDBOARD_SOUND_DELETE"
+	guildSoundboardSoundUpdateEventType          = "GUILD_SOUNDBOARD_SOUND_UPDATE"
 	guildUpdateEventType                         = "GUILD_UPDATE"
 	interactionCreateEventType                   = "INTERACTION_CREATE"
 	inviteCreateEventType                        = "INVITE_CREATE"
@@ -1097,6 +1100,66 @@ func (eh resumedEventHandler) Handle(s *Session, i interface{}) {
 	}
 }
 
+// guildSoundboardSoundCreateEventType is an event handler for GuildSoundboardSoundCreate events.
+type guildSoundboardSoundCreateEventHandler func(*Session, *GuildSoundboardSoundCreate)
+
+// Type returns the event type for GuildSoundboardSoundCreate events.
+func (eh guildSoundboardSoundCreateEventHandler) Type() string {
+	return guildSoundboardSoundCreateEventType
+}
+
+// New returns a new instance of GuildSoundboardSoundCreate.
+func (eh guildSoundboardSoundCreateEventHandler) New() interface{} {
+	return &GuildSoundboardSoundCreate{}
+}
+
+// Handle is the handler for GuildSoundboardSoundCreate events.
+func (eh guildSoundboardSoundCreateEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*GuildSoundboardSoundCreate); ok {
+		eh(s, t)
+	}
+}
+
+// guildSoundboardSoundDeleteEventHandler is an event handler for GuildSoundboardSoundDelete events.
+type guildSoundboardSoundDeleteEventHandler func(*Session, *GuildSoundboardSoundDelete)
+
+// Type returns the event type for GuildSoundboardSoundDelete events.
+func (eh guildSoundboardSoundDeleteEventHandler) Type() string {
+	return guildSoundboardSoundDeleteEventType
+}
+
+// New returns a new instance of GuildSoundboardSoundDelete.
+func (eh guildSoundboardSoundDeleteEventHandler) New() interface{} {
+	return &GuildSoundboardSoundDelete{}
+}
+
+// Handle is the handler for GuildSoundboardSoundDelete events.
+func (eh guildSoundboardSoundDeleteEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*GuildSoundboardSoundDelete); ok {
+		eh(s, t)
+	}
+}
+
+// guildSoundboardSoundUpdateEventHandler is an event handler for GuildSoundboardSoundUpdate events.
+type guildSoundboardSoundUpdateEventHandler func(*Session, *GuildSoundboardSoundUpdate)
+
+// Type returns the event type for GuildSoundboardSoundUpdate events.
+func (eh guildSoundboardSoundUpdateEventHandler) Type() string {
+	return guildSoundboardSoundUpdateEventType
+}
+
+// New returns a new instance of GuildSoundboardSoundUpdate.
+func (eh guildSoundboardSoundUpdateEventHandler) New() interface{} {
+	return &GuildSoundboardSoundUpdate{}
+}
+
+// Handle is the handler for GuildSoundboardSoundUpdate events.
+func (eh guildSoundboardSoundUpdateEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*GuildSoundboardSoundUpdate); ok {
+		eh(s, t)
+	}
+}
+
 // stageInstanceEventCreateEventHandler is an event handler for StageInstanceEventCreate events.
 type stageInstanceEventCreateEventHandler func(*Session, *StageInstanceEventCreate)
 
@@ -1493,6 +1556,12 @@ func handlerForInterface(handler interface{}) EventHandler {
 		return guildScheduledEventUserAddEventHandler(v)
 	case func(*Session, *GuildScheduledEventUserRemove):
 		return guildScheduledEventUserRemoveEventHandler(v)
+	case func(*Session, *GuildSoundboardSoundCreate):
+		return guildSoundboardSoundCreateEventHandler(v)
+	case func(*Session, *GuildSoundboardSoundDelete):
+		return guildSoundboardSoundDeleteEventHandler(v)
+	case func(*Session, *GuildSoundboardSoundUpdate):
+		return guildSoundboardSoundUpdateEventHandler(v)
 	case func(*Session, *GuildUpdate):
 		return guildUpdateEventHandler(v)
 	case func(*Session, *InteractionCreate):
@@ -1596,6 +1665,9 @@ func init() {
 	registerInterfaceProvider(guildScheduledEventUpdateEventHandler(nil))
 	registerInterfaceProvider(guildScheduledEventUserAddEventHandler(nil))
 	registerInterfaceProvider(guildScheduledEventUserRemoveEventHandler(nil))
+	registerInterfaceProvider(guildSoundboardSoundCreateEventHandler(nil))
+	registerInterfaceProvider(guildSoundboardSoundDeleteEventHandler(nil))
+	registerInterfaceProvider(guildSoundboardSoundUpdateEventHandler(nil))
 	registerInterfaceProvider(guildUpdateEventHandler(nil))
 	registerInterfaceProvider(interactionCreateEventHandler(nil))
 	registerInterfaceProvider(inviteCreateEventHandler(nil))

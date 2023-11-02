@@ -1482,6 +1482,32 @@ type VoiceState struct {
 	RequestToSpeakTimestamp *time.Time `json:"request_to_speak_timestamp"`
 }
 
+// Soundboard sound
+type SoundboardSound struct {
+	// ID of the sound
+	ID string `json:"id"`
+	// ID of the sound
+	SoundID string `json:"sound_id"`
+	// ID of the guild this sound is in
+	GuildID string `json:"guild_id"`
+	// ID of the user who created this sound
+	UserID string `json:"user_id"`
+	// User who created this sound
+	User *User `json:"user"`
+	// The name of this sound
+	Name string `json:"name"`
+	// Volume of the sound, from 0 to 1
+	Volume float64 `json:"volume"`
+	// ID of this sound's custom emoji
+	EmojiID string `json:"emoji_id"`
+	// Unicode character of this sound's standard emoji
+	EmojiName string `json:"emoji_name"`
+	// Filename of this sound (for default sounds)
+	OverridePath string `json:"override_path"`
+	// Whether this sound can be used (for guild sounds), may be false due to loss of Server Boosts
+	Available bool `json:"available"`
+}
+
 // A Presence stores the online, offline, or idle and game status of Guild members.
 type Presence struct {
 	User         *User        `json:"user"`

@@ -265,6 +265,24 @@ type GuildScheduledEventUserRemove struct {
 	GuildID               string `json:"guild_id"`
 }
 
+// GuildSoundboardSoundCreate is the data for a GuildSoundboardSoundCreate event.
+type GuildSoundboardSoundCreate struct {
+	*SoundboardSound
+}
+
+// GuildSoundboardSoundDelete is the data for a GuildSoundboardSoundDelete event.
+type GuildSoundboardSoundDelete struct {
+	// ID of the sound that was deleted
+	SoundID string `json:"sound_id"`
+	// ID of the guild the sound was in
+	GuildID string `json:"guild_id"`
+}
+
+// GuildSoundboardSoundUpdate is the data for a GuildSoundboardSoundUpdate event.
+type GuildSoundboardSoundUpdate struct {
+	*SoundboardSound
+}
+
 // MessageCreate is the data for a MessageCreate event.
 type MessageCreate struct {
 	*Message
