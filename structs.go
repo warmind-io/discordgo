@@ -581,6 +581,7 @@ type Emoji struct {
 	RequireColons bool     `json:"require_colons"`
 	Managed       bool     `json:"managed"`
 	Animated      bool     `json:"animated"`
+	Burst         bool     `json:"burst"`
 	Available     bool     `json:"available"`
 }
 
