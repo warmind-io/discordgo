@@ -164,6 +164,21 @@ type GuildBanRemove struct {
 	GuildID string `json:"guild_id"`
 }
 
+// GuildJoinRequestDelete is the data for a GuildJoinRequestDelete event
+type GuildJoinRequestDelete struct {
+	// ID of the join request
+	ID string `json:"id"`
+	// ID of the user in the join request
+	UserID string `json:"user_id"`
+	// ID of the guild
+	GuildID string `json:"guild_id"`
+}
+
+// GuildJoinRequestUpdate is the data for a GuildJoinRequestUpdate event
+type GuildJoinRequestUpdate struct {
+	*GuildJoinRequest
+}
+
 // GuildMemberAdd is the data for a GuildMemberAdd event.
 type GuildMemberAdd struct {
 	*Member

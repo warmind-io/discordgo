@@ -1224,6 +1224,42 @@ type GuildTemplateParams struct {
 	Description string `json:"description,omitempty"`
 }
 
+// RequestStatus is the status of a request to join guild
+type RequestStatus string
+
+const (
+	RequestStatusApproved RequestStatus = "APPROVED"
+)
+
+type Request struct {
+	UserID          string    `json:"user_id"`
+	User            *User     `json:"user"`
+	RejectionReason *string   `json:"rejection_reason"`
+	LastSeen        time.Time `json:"last_seen"`
+	ID              string    `json:"id"`
+	GuildID         string    `json:"guild_id"`
+	FormResponses   []struct {
+		Values      []string `json:"values"`
+		Response    bool     `json:"response"`
+		Required    bool     `json:"required"`
+		Label       string   `json:"label"`
+		FieldType   string   `json:"field_type"`
+		Description *string  `json:"description"`
+		Automations *string  `json:"automations"`
+	} `json:"form_responses"`
+	CreatedAt         time.Time     `json:"created_at"`
+	ApplicationStatus RequestStatus `json:"application_status"`
+	ActionedByUser    *User         `json:"actioned_by_user"`
+	ActionedAt        string        `json:"actioned_at"`
+}
+
+// GuildJoinRequest represents a guild join request
+type GuildJoinRequest struct {
+	Status  RequestStatus `json:"status"`
+	Request *Request      `json:"request"`
+	GuildID string        `json:"guild_id"`
+}
+
 // MessageNotifications is the notification level for a guild
 // https://discord.com/developers/docs/resources/guild#guild-object-default-message-notification-level
 type MessageNotifications int
