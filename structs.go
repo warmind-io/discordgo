@@ -426,6 +426,9 @@ type Channel struct {
 	// The default forum layout view used to display posts in forum channels.
 	// Defaults to ForumLayoutNotSet, which indicates a layout view has not been set by a channel admin.
 	DefaultForumLayout ForumLayout `json:"default_forum_layout"`
+
+	// The voice channel status (0-500 characters), only included in the Guild Create event
+	Status string `json:"status"`
 }
 
 // Mention returns a string which mentions the channel

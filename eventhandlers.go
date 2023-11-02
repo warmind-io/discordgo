@@ -69,6 +69,8 @@ const (
 	typingStartEventType                         = "TYPING_START"
 	userUpdateEventType                          = "USER_UPDATE"
 	voiceServerUpdateEventType                   = "VOICE_SERVER_UPDATE"
+	voiceChannelStatusUpdateEventType            = "VOICE_CHANNEL_STATUS_UPDATE"
+	voiceChannelStatusDeleteEventType            = "VOICE_CHANNEL_STATUS_DELETE"
 	voiceStateUpdateEventType                    = "VOICE_STATE_UPDATE"
 	webhooksUpdateEventType                      = "WEBHOOKS_UPDATE"
 )
@@ -1313,6 +1315,46 @@ func (eh voiceStateUpdateEventHandler) Handle(s *Session, i interface{}) {
 	}
 }
 
+// voiceChannelStatusUpdateEventHandler is an event handler for VoiceChannelStatusUpdate events.
+type voiceChannelStatusUpdateEventHandler func(*Session, *VoiceChannelStatusUpdate)
+
+// Type returns the event type for VoiceChannelStatusUpdate events.
+func (eh voiceChannelStatusUpdateEventHandler) Type() string {
+	return voiceChannelStatusUpdateEventType
+}
+
+// New returns a new instance of VoiceChannelStatusUpdate.
+func (eh voiceChannelStatusUpdateEventHandler) New() interface{} {
+	return &VoiceChannelStatusUpdate{}
+}
+
+// Handle is the handler for VoiceChannelStatusUpdate events.
+func (eh voiceChannelStatusUpdateEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*VoiceChannelStatusUpdate); ok {
+		eh(s, t)
+	}
+}
+
+// voiceChannelStatusDeleteEventHandler is an event handler for VoiceChannelStatusDelete events.
+type voiceChannelStatusDeleteEventHandler func(*Session, *VoiceChannelStatusDelete)
+
+// Type returns the event type for VoiceChannelStatusDelete events.
+func (eh voiceChannelStatusDeleteEventHandler) Type() string {
+	return voiceChannelStatusDeleteEventType
+}
+
+// New returns a new instance of VoiceChannelStatusDelete.
+func (eh voiceChannelStatusDeleteEventHandler) New() interface{} {
+	return &VoiceChannelStatusDelete{}
+}
+
+// Handle is the handler for VoiceChannelStatusDelete events.
+func (eh voiceChannelStatusDeleteEventHandler) Handle(s *Session, i interface{}) {
+	if t, ok := i.(*VoiceChannelStatusDelete); ok {
+		eh(s, t)
+	}
+}
+
 // webhooksUpdateEventHandler is an event handler for WebhooksUpdate events.
 type webhooksUpdateEventHandler func(*Session, *WebhooksUpdate)
 
@@ -1463,6 +1505,10 @@ func handlerForInterface(handler interface{}) EventHandler {
 		return voiceServerUpdateEventHandler(v)
 	case func(*Session, *VoiceStateUpdate):
 		return voiceStateUpdateEventHandler(v)
+	case func(*Session, *VoiceChannelStatusUpdate):
+		return voiceChannelStatusUpdateEventHandler(v)
+	case func(*Session, *VoiceChannelStatusDelete):
+		return voiceChannelStatusDeleteEventHandler(v)
 	case func(*Session, *WebhooksUpdate):
 		return webhooksUpdateEventHandler(v)
 	}
@@ -1530,5 +1576,7 @@ func init() {
 	registerInterfaceProvider(userUpdateEventHandler(nil))
 	registerInterfaceProvider(voiceServerUpdateEventHandler(nil))
 	registerInterfaceProvider(voiceStateUpdateEventHandler(nil))
+	registerInterfaceProvider(voiceChannelStatusUpdateEventHandler(nil))
+	registerInterfaceProvider(voiceChannelStatusDeleteEventHandler(nil))
 	registerInterfaceProvider(webhooksUpdateEventHandler(nil))
 }

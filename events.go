@@ -352,6 +352,24 @@ type VoiceStateUpdate struct {
 	BeforeUpdate *VoiceState `json:"-"`
 }
 
+// VoiceChannelStatusUpdate is the data for a VoiceChannelStatusUpdate event.
+type VoiceChannelStatusUpdate struct {
+	// ID of the voice channel
+	ID string `json:"id"`
+	// ID of the guild
+	GuildID string `json:"guild_id"`
+	// Voice channel status (0-500 characters)
+	Status *string `json:"status"`
+}
+
+// VoiceChannelStatusDelete is the data for a VoiceChannelStatusDelete event.
+type VoiceChannelStatusDelete struct {
+	// ID of the voice channel
+	ID string `json:"id"`
+	// ID of the guild
+	GuildID string `json:"guild_id"`
+}
+
 // MessageDeleteBulk is the data for a MessageDeleteBulk event
 type MessageDeleteBulk struct {
 	Messages  []string `json:"ids"`
