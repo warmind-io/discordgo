@@ -310,6 +310,8 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType, reason st
 			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, reason, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, options...)
 		} else {
 			s.log(LogError, "Failed rate limit retries after 5 retries: %s, %s", urlStr, rl.RetryAfter)
+			util.IncrMetric("discord.maxRetries", []string{}, 1)
+			err = errors.New("max retries")
 		}
 	case http.StatusUnauthorized:
 		if strings.Index(s.Token, "Bot ") != 0 {
