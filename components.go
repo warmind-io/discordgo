@@ -30,6 +30,17 @@ type unmarshalableMessageComponent struct {
 	MessageComponent
 }
 
+// Unknown components must not prevent decoding the rest of a message. Keep an
+// owned copy so new Discord component types also survive forwarding/marshaling.
+type unknownMessageComponent struct {
+	componentType ComponentType
+	raw           json.RawMessage
+}
+
+func (c unknownMessageComponent) Type() ComponentType { return c.componentType }
+
+func (c unknownMessageComponent) MarshalJSON() ([]byte, error) { return c.raw, nil }
+
 // UnmarshalJSON is a helper function to unmarshal MessageComponent object.
 func (umc *unmarshalableMessageComponent) UnmarshalJSON(src []byte) error {
 	var v struct {
@@ -51,7 +62,14 @@ func (umc *unmarshalableMessageComponent) UnmarshalJSON(src []byte) error {
 	case TextInputComponent:
 		umc.MessageComponent = &TextInput{}
 	default:
-		return fmt.Errorf("unknown component type: %d", v.Type)
+		if v.Type == 0 {
+			return fmt.Errorf("unknown component type: %d", v.Type)
+		}
+		umc.MessageComponent = &unknownMessageComponent{
+			componentType: v.Type,
+			raw:           append(json.RawMessage(nil), src...),
+		}
+		return nil
 	}
 	return json.Unmarshal(src, umc.MessageComponent)
 }
