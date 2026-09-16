@@ -12,6 +12,7 @@
 package discordgo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -41,6 +42,12 @@ type Session struct {
 
 	// Should the session reconnect the websocket on errors.
 	ShouldReconnectOnError bool
+
+	// IdentifyGate optionally paces fresh sessions across shards. It acquires
+	// before dialing and returns a release function called after the Identify
+	// write (or a failed attempt). It must honor cancellation. Configure before
+	// Open; Resume attempts do not acquire the gate.
+	IdentifyGate func(context.Context) (release func(), err error)
 
 	// Should voice connections reconnect on a session reconnect.
 	ShouldReconnectVoiceOnSessionError bool
@@ -134,6 +141,15 @@ type Session struct {
 
 	// used to make sure gateway websocket writes do not happen concurrently
 	wsMutex sync.Mutex
+
+	// Independent of the session lock: health reads and Close cancellation must
+	// remain available while Open is waiting on a gateway or an Identify permit.
+	gatewayMu      sync.RWMutex
+	gatewayHealth  GatewayHealth
+	gatewayConn    *websocket.Conn
+	gatewayContext context.Context
+	gatewayCancel  context.CancelFunc
+	resumeGateway  string
 }
 
 // Application stores values for a Discord Application

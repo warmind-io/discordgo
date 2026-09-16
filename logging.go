@@ -74,7 +74,7 @@ func (s *Session) log(msgL int, format string, a ...interface{}) {
 		return
 	}
 
-	msglog(msgL, 2, format, a...)
+	msglog(msgL, 2, "shard=%d "+format, append([]interface{}{s.ShardID}, a...)...)
 }
 
 // helper function that wraps msglog for the VoiceConnection struct

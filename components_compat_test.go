@@ -94,7 +94,7 @@ func TestGatewayMessageCreateWithUnknownComponents(t *testing.T) {
 			})
 			// Exercise the actual gateway decoder/dispatch path without a socket.
 			packet := fmt.Sprintf(`{"op":0,"s":1,"t":"MESSAGE_CREATE","d":{"id":"1","channel_id":"2","guild_id":"3","content":"outer","author":{"id":"4","bot":true},"components":%s,"referenced_message":{"id":"5","content":"inner","author":{"id":"6"},"components":%s}}}`, components, components)
-			if _, err := s.onEvent(1, []byte(packet)); err != nil {
+			if _, err := s.onEvent(nil, 1, []byte(packet)); err != nil {
 				t.Fatal(err)
 			}
 			if !called {
