@@ -18,6 +18,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -586,6 +587,39 @@ type ForumTag struct {
 	Moderated bool   `json:"moderated"`
 	EmojiID   string `json:"emoji_id,omitempty"`
 	EmojiName string `json:"emoji_name,omitempty"`
+}
+
+// UnmarshalJSON accepts forum tag IDs encoded as either strings or integers.
+// Keep the public string field and outbound JSON unchanged.
+func (t *ForumTag) UnmarshalJSON(data []byte) error {
+	type forumTag ForumTag
+	decoded := forumTag(*t)
+	aux := struct {
+		*forumTag
+		ID forumTagID `json:"id"`
+	}{forumTag: &decoded, ID: forumTagID(t.ID)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	decoded.ID = string(aux.ID)
+	*t = ForumTag(decoded)
+	return nil
+}
+
+// forumTagID preserves string/null semantics and never routes a snowflake
+// through float64, which would lose precision for typical Discord IDs.
+type forumTagID string
+
+func (id *forumTagID) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, (*string)(id)); err == nil {
+		return nil
+	}
+	var numericID uint64
+	if err := json.Unmarshal(data, &numericID); err != nil {
+		return fmt.Errorf("discordgo: invalid forum tag ID: %w", err)
+	}
+	*id = forumTagID(strconv.FormatUint(numericID, 10))
+	return nil
 }
 
 // Emoji struct holds data related to Emoji's
